@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: seniorcare-ai
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2
+    envVars:
+      - key: ASI_API_KEY
+        sync: false
+      - key: ASI_BASE_URL
+        value: https://api.asi1.ai/v1
+      - key: ASI_MODEL
+        value: asi1-mini
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: PHONE_NUMBER_ID
+        sync: false
+      - key: WEBHOOK_VERIFY_TOKEN
+        value: seniorcare_verify_123
+      - key: CAREGIVER_PHONE
+        sync: false
