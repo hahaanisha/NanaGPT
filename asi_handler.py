@@ -12,6 +12,7 @@ client = OpenAI(
 )
 MODEL = os.getenv("ASI_MODEL", "asi1-mini")
 
+
 def build_system_prompt(user: dict) -> str:
     lang = user.get("language", "English")
     name = user.get("name", "")
@@ -21,25 +22,27 @@ def build_system_prompt(user: dict) -> str:
     context = ""
     if name:
         context += f"User's name: {name}. "
-    if conditions:
+    if conditions and conditions.lower() != "none":
         context += f"Known conditions: {conditions}. "
-    if medicines:
+    if medicines and medicines.lower() != "none":
         context += f"Current medicines: {medicines}. "
 
     return f"""You are NanaGPT, a compassionate health assistant for elderly people on WhatsApp.
 {context}
 
 Rules:
-- Always reply in {lang}
-- Keep responses SHORT and SIMPLE — users are elderly
-- For medical questions always add: consult your doctor for personal advice
+- Always reply in {lang} only
+- Keep responses SHORT and SIMPLE — max 4 sentences — users are elderly
+- For medical questions always end with: consult your doctor for personal advice
 - Never diagnose. Only explain and guide.
-- For reminders, extract medicine name, time (HH:MM 24hr format), frequency
+- For reminders, extract medicine name, time in HH:MM 24hr format, frequency
   and output as JSON inside <REMINDER> tags like:
   <REMINDER>{{"medicine":"Crocin","time":"21:00","frequency":"daily"}}</REMINDER>
-- For health logs (BP, sugar), extract type and value and output inside <HEALTHLOG> tags like:
+- For health logs (BP, sugar, weight), extract type and value and output inside <HEALTHLOG> tags like:
   <HEALTHLOG>{{"type":"BP","value":"140/90"}}</HEALTHLOG>
+- Never output both tags in one response
 """
+
 
 def chat_with_asi(user_message: str, user: dict, history: list = None) -> dict:
     messages = [{"role": "system", "content": build_system_prompt(user)}]
@@ -58,7 +61,7 @@ def chat_with_asi(user_message: str, user: dict, history: list = None) -> dict:
     reminder = extract_tag(reply_text, "REMINDER")
     health_log = extract_tag(reply_text, "HEALTHLOG")
 
-    # Clean tags from reply
+    # Strip tags from user-facing reply
     clean_reply = re.sub(r'<REMINDER>.*?</REMINDER>', '', reply_text, flags=re.DOTALL).strip()
     clean_reply = re.sub(r'<HEALTHLOG>.*?</HEALTHLOG>', '', clean_reply, flags=re.DOTALL).strip()
 
@@ -68,16 +71,17 @@ def chat_with_asi(user_message: str, user: dict, history: list = None) -> dict:
         "health_log": health_log,
     }
 
-def explain_prescription(image_url: str, language: str, user: dict) -> str:
+
+def explain_prescription(image_b64: str, language: str, user: dict) -> str:
     conditions = user.get("conditions", "")
-    context = f"Note: Patient has {conditions}." if conditions else ""
+    context = f"Note: Patient has {conditions}." if conditions and conditions.lower() != "none" else ""
 
     prompt = f"""This is a prescription image. {context}
-Please:
-1. List each medicine name
-2. Explain what it is used for in simple words
-3. Note the dosage
-4. Any important precautions
+Please explain:
+1. Each medicine name
+2. What it is used for (simple words)
+3. Dosage instructions
+4. Important precautions
 
 Reply entirely in {language}. Keep it very simple for an elderly person."""
 
@@ -88,7 +92,12 @@ Reply entirely in {language}. Keep it very simple for an elderly person."""
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": image_url}},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_b64}"
+                        }
+                    },
                     {"type": "text", "text": prompt}
                 ]
             }
@@ -96,6 +105,7 @@ Reply entirely in {language}. Keep it very simple for an elderly person."""
         max_tokens=800,
     )
     return response.choices[0].message.content.strip()
+
 
 def extract_tag(text: str, tag: str):
     match = re.search(rf'<{tag}>(.*?)</{tag}>', text, re.DOTALL)
