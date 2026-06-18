@@ -166,7 +166,8 @@ def handle_text_message(sender: str, text: str):
         send_text(sender, "✅ Great! Stay healthy! 💪\n\n_Reply 0 for menu_")
         return
 
-    # State-based routing — always takes priority over number detection
+    # ── State-based routing — always takes priority ────────────────────────────
+
     if state == "reminder":
         handle_reminder_input(sender, text, user)
         return
@@ -188,11 +189,13 @@ def handle_text_message(sender: str, text: str):
         return
 
     if state == "prescription":
-        # User typed instead of sending image
-        send_text(sender, "Please send your prescription as a *photo/image* 📸\n\n_Or reply 0 for menu_")
+        send_text(sender,
+            "Please send your prescription as a *photo/image* 📸\n\n"
+            "_Or reply 0 for menu_"
+        )
         return
 
-    # Menu state — handle number selections
+    # ── Menu state — handle number selections ──────────────────────────────────
     if text in ["1", "2", "3", "4", "5", "6", "7"]:
         handle_menu_selection(sender, text, user)
         return
@@ -266,6 +269,7 @@ def handle_menu_selection(sender: str, text: str, user: dict):
         send_text(sender, "Please reply with a number 1-7, or type *Hi* for menu.")
 
 # ─── Feature Handlers ──────────────────────────────────────────────────────────
+
 def handle_reminder_input(sender: str, text: str, user: dict):
     history = get_recent_history(sender)
     result = chat_with_asi(
@@ -325,10 +329,11 @@ def handle_delete_reminder(sender: str, text: str, user: dict):
     if text.lower().startswith("delete "):
         medicine = text[7:].strip()
         delete_reminder(sender, medicine)
-        send_text(sender, f"🗑️ Reminder for *{medicine}* deleted.\n\n_Reply 0 for menu_")
+        send_text(sender,
+            f"🗑️ Reminder for *{medicine}* deleted.\n\n_Reply 0 for menu_"
+        )
         upsert_user(sender, {"state": "menu"})
     elif text in ["1", "2", "3", "4", "5", "6", "7"]:
-        # User wants menu option instead
         upsert_user(sender, {"state": "menu"})
         handle_menu_selection(sender, text, user)
     else:
@@ -340,7 +345,9 @@ def handle_health_question(sender: str, text: str, user: dict):
     result = chat_with_asi(text, user, history)
     add_message_to_history(sender, "user", text)
     add_message_to_history(sender, "assistant", result["reply"])
-    send_text(sender, result["reply"] + "\n\n_Ask another question or reply 0 for menu_")
+    send_text(sender,
+        result["reply"] + "\n\n_Ask another question or reply 0 for menu_"
+    )
 
 
 def handle_health_log_input(sender: str, text: str, user: dict):
@@ -392,7 +399,13 @@ def handle_language_input(sender: str, text: str, user: dict):
     lang = lang_map.get(text.strip())
     if lang:
         upsert_user(sender, {"language": lang, "state": "menu"})
-        send_text(sender, f"✅ Language changed to *{lang}*!\n\n_Reply 0 for menu_")
+        # Re-fetch user with updated language and test immediately
+        updated_user = get_user(sender)
+        result = chat_with_asi(
+            f"Say this exactly in {lang}: 'Language changed to {lang}! How can I help you today?'",
+            updated_user, []
+        )
+        send_text(sender, result["reply"] + "\n\n_Reply 0 for menu_")
     else:
         send_text(sender,
             "Please reply with a number:\n\n"
@@ -423,7 +436,7 @@ def handle_image_message(sender: str, media_id: str):
         )
         return
 
-    # Set state to menu immediately to prevent re-triggers
+    # Set state immediately to prevent re-triggers
     upsert_user(sender, {"state": "menu"})
     send_text(sender, "📋 Reading your prescription... ⏳")
 
@@ -468,7 +481,9 @@ def handle_audio_message(sender: str, media_id: str):
         handle_text_message(sender, transcript.text)
     except Exception as e:
         print(f"[Audio Error] {e}")
-        send_text(sender, "Sorry, couldn't process voice message. Please type instead. 🙏")
+        send_text(sender,
+            "Sorry, couldn't process voice message. Please type instead. 🙏"
+        )
 
 
 @app.route("/", methods=["GET"])

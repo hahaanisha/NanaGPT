@@ -30,8 +30,17 @@ def build_system_prompt(user: dict) -> str:
     return f"""You are NanaGPT, a compassionate health assistant for elderly people on WhatsApp.
 {context}
 
-Rules:
-- Always reply in {lang} only
+CRITICAL INSTRUCTION — LANGUAGE:
+You MUST reply ONLY in {lang}.
+Do NOT use English if the language is not English.
+Do NOT mix languages.
+Every single word of your response must be in {lang}.
+If {lang} is Hindi, write in Devanagari script (हिंदी).
+If {lang} is Marathi, write in Devanagari script (मराठी).
+If {lang} is Gujarati, write in Gujarati script (ગુજરાતી).
+If {lang} is Tamil, write in Tamil script (தமிழ்).
+
+Other rules:
 - Keep responses SHORT and SIMPLE — max 4 sentences — users are elderly
 - For medical questions always end with: consult your doctor for personal advice
 - Never diagnose. Only explain and guide.
@@ -74,7 +83,11 @@ def chat_with_asi(user_message: str, user: dict, history: list = None) -> dict:
 
 def explain_prescription(image_b64: str, language: str, user: dict) -> str:
     conditions = user.get("conditions", "")
-    context = f"Note: Patient has {conditions}." if conditions and conditions.lower() != "none" else ""
+    context = (
+        f"Note: Patient has {conditions}."
+        if conditions and conditions.lower() != "none"
+        else ""
+    )
 
     prompt = f"""This is a prescription image. {context}
 Please explain:
@@ -83,7 +96,9 @@ Please explain:
 3. Dosage instructions
 4. Important precautions
 
-Reply entirely in {language}. Keep it very simple for an elderly person."""
+IMPORTANT: Reply entirely in {language} only. 
+Every single word must be in {language}.
+Keep it very simple for an elderly person."""
 
     response = client.chat.completions.create(
         model=MODEL,
