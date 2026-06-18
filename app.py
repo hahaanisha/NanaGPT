@@ -3,10 +3,14 @@ import json
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
-from asi_handler import chat_with_asi, explain_prescription, detect_emergency
-from whatsapp import send_text, send_emergency_alert, get_media_url, download_media
-from firebase_handler import (get_user, upsert_user, add_message_to_history,
-                               get_recent_history, save_reminder, log_health_checkin, init_db)
+from asi_handler import chat_with_asi, explain_prescription
+from whatsapp import send_text, get_media_url, download_media
+from firebase_handler import (
+    get_user, upsert_user, init_db,
+    add_message_to_history, get_recent_history,
+    save_reminder, get_active_reminders, delete_reminder,
+    save_health_log, get_health_logs
+)
 from reminder_scheduler import start_scheduler
 
 load_dotenv()
@@ -14,7 +18,6 @@ init_db()
 
 app = Flask(__name__)
 VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN")
-CAREGIVER_PHONE = os.getenv("CAREGIVER_PHONE")
 
 # ─── Webhook Verification ──────────────────────────────────────────────────────
 @app.route("/webhook", methods=["GET"])
@@ -27,240 +30,371 @@ def verify_webhook():
         return challenge, 200
     return "Forbidden", 403
 
-
 # ─── Incoming Messages ─────────────────────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def handle_webhook():
     data = request.get_json()
-    print(f"[Webhook] Received: {json.dumps(data)}")
-
+    print(f"[Webhook] {json.dumps(data)}")
     try:
         entry = data["entry"][0]["changes"][0]["value"]
         if "messages" not in entry:
             return jsonify({"status": "ok"}), 200
-
         message = entry["messages"][0]
         sender = message["from"]
         msg_type = message["type"]
 
         if msg_type == "text":
-            text = message["text"]["body"].strip()
-            handle_text_message(sender, text)
-
+            handle_text_message(sender, message["text"]["body"].strip())
         elif msg_type == "image":
             handle_image_message(sender, message["image"]["id"])
-
         elif msg_type == "audio":
             handle_audio_message(sender, message["audio"]["id"])
 
     except (KeyError, IndexError) as e:
-        print(f"[Webhook] Parse error: {e}")
-
+        print(f"[Error] {e}")
     return jsonify({"status": "ok"}), 200
 
-
-# ─── Menu System ───────────────────────────────────────────────────────────────
-
-MAIN_MENU = """🙏 *Welcome to NanaGPT — SeniorCare AI!*
-
-Please choose an option by replying with the number:
-
-1️⃣ - 💊 Medicine Reminder
-2️⃣ - 📋 Explain Prescription
-3️⃣ - ❓ Health Question
-4️⃣ - 📅 My Reminders
-5️⃣ - 🚨 Emergency Alert
-6️⃣ - 🌡️ Daily Health Check-in
-
-_Reply 0 anytime to return to this menu_"""
-
-MENU_PROMPTS = {
-    "1": "💊 *Medicine Reminder*\n\nTell me the medicine and time.\nExample: _Remind me to take Crocin at 9 PM daily_",
-    "2": "📋 *Prescription Explanation*\n\nPlease *send a photo* of your prescription.\nAlso tell me your language (Hindi/Marathi/English).",
-    "3": "❓ *Health Question*\n\nGo ahead, type your health question.\nExample: _What is Metformin used for?_",
-    "4": None,  # handled separately
-    "5": "🚨 *Emergency Alert*\n\nDescribe your emergency symptom right now.\nExample: _I have chest pain_\n\n⚠️ Your caregiver will be alerted immediately.",
-    "6": "🌡️ *Daily Check-in*\n\nHow are you feeling today?\nReply with: Good 😊 / Not well 😔 / or describe your symptoms."
-}
+# ─── Menus ─────────────────────────────────────────────────────────────────────
 
 def send_main_menu(sender: str):
-    send_text(sender, MAIN_MENU)
-    upsert_user(sender, {"phone": sender, "state": "menu"})
+    msg = (
+        "🏥 *NanaGPT — Main Menu*\n\n"
+        "1️⃣ - 💊 Set Medicine Reminder\n"
+        "2️⃣ - 📅 View My Reminders\n"
+        "3️⃣ - 📋 Read Prescription\n"
+        "4️⃣ - ❓ Ask Health Question\n"
+        "5️⃣ - 📊 Log Health Reading\n"
+        "6️⃣ - 📈 View Health History\n"
+        "7️⃣ - 🌐 Change Language\n\n"
+        "_Reply with a number to choose_"
+    )
+    send_text(sender, msg)
+    upsert_user(sender, {"state": "menu"})
 
+# ─── Onboarding ────────────────────────────────────────────────────────────────
+
+ONBOARDING_STEPS = ["name", "age", "conditions", "medicines", "prescription_image"]
+
+def start_onboarding(sender: str):
+    upsert_user(sender, {"phone": sender, "state": "onboard_name", "language": "English"})
+    send_text(sender,
+        "🙏 *Welcome to NanaGPT!*\n\n"
+        "I am your personal health assistant.\n"
+        "Let me set up your profile first.\n\n"
+        "👤 What is your *name*?"
+    )
+
+def handle_onboarding(sender: str, text: str, user: dict):
+    state = user.get("state", "")
+
+    if state == "onboard_name":
+        upsert_user(sender, {"name": text, "state": "onboard_age"})
+        send_text(sender, f"Nice to meet you, *{text}*! 😊\n\n🔢 What is your *age*?")
+
+    elif state == "onboard_age":
+        upsert_user(sender, {"age": text, "state": "onboard_conditions"})
+        send_text(sender,
+            "🏥 Do you have any known health conditions?\n\n"
+            "Example: _Diabetes, High BP, Thyroid_\n\n"
+            "Or type *None* if not applicable."
+        )
+
+    elif state == "onboard_conditions":
+        upsert_user(sender, {"conditions": text, "state": "onboard_medicines"})
+        send_text(sender,
+            "💊 What medicines are you currently taking?\n\n"
+            "Example: _Metformin 500mg, Amlodipine 5mg_\n\n"
+            "Or type *None* if not applicable."
+        )
+
+    elif state == "onboard_medicines":
+        upsert_user(sender, {"medicines": text, "state": "onboard_prescription"})
+        send_text(sender,
+            "📋 Please send a *photo of your prescription* so I can store it.\n\n"
+            "Or type *Skip* to continue without it."
+        )
+
+    elif state == "onboard_prescription":
+        if text.lower() == "skip":
+            finish_onboarding(sender)
+        else:
+            send_text(sender, "Please send the prescription as a *photo/image*, or type *Skip*.")
+
+def handle_onboarding_image(sender: str, media_id: str):
+    user = get_user(sender)
+    if user.get("state") == "onboard_prescription":
+        media_url = get_media_url(media_id)
+        upsert_user(sender, {"prescription_url": media_url})
+        finish_onboarding(sender)
+
+def finish_onboarding(sender: str):
+    user = get_user(sender)
+    upsert_user(sender, {"state": "menu", "onboarded": True})
+    send_text(sender,
+        f"✅ *Profile saved!*\n\n"
+        f"👤 Name: {user.get('name')}\n"
+        f"🔢 Age: {user.get('age')}\n"
+        f"🏥 Conditions: {user.get('conditions', 'None')}\n"
+        f"💊 Medicines: {user.get('medicines', 'None')}\n\n"
+        f"You're all set! Here's what I can do for you:"
+    )
+    send_main_menu(sender)
+
+# ─── Main Message Router ───────────────────────────────────────────────────────
 
 def handle_text_message(sender: str, text: str):
     print(f"[MSG] {sender}: {text}")
-
-    # Ensure user exists
     user = get_user(sender)
-    if not user:
-        upsert_user(sender, {"phone": sender, "state": "menu"})
-        send_main_menu(sender)
+
+    # New user — start onboarding
+    if not user or not user.get("onboarded"):
+        if not user:
+            start_onboarding(sender)
+        else:
+            handle_onboarding(sender, text, user)
         return
 
-    current_state = user.get("state", "menu")
+    state = user.get("state", "menu")
     text_lower = text.lower()
 
-    # Always return to menu on 0 or hi/hello
-    if text in ["0"] or text_lower in ["hi", "hello", "hey", "menu", 
+    # Global: return to menu
+    if text in ["0"] or text_lower in ["hi", "hello", "menu", "back",
                                         "नमस्ते", "हेलो", "नमस्कार"]:
         send_main_menu(sender)
         return
 
-    # ── Handle menu selection ──────────────────────────────────────────────
-    if current_state == "menu" or text in ["1","2","3","4","5","6"]:
-
-        if text == "1":
-            upsert_user(sender, {"state": "reminder"})
-            send_text(sender, MENU_PROMPTS["1"])
-
-        elif text == "2":
-            upsert_user(sender, {"state": "prescription"})
-            send_text(sender, MENU_PROMPTS["2"])
-
-        elif text == "3":
-            upsert_user(sender, {"state": "health_question"})
-            send_text(sender, MENU_PROMPTS["3"])
-
-        elif text == "4":
-            show_reminders(sender)
-
-        elif text == "5":
-            upsert_user(sender, {"state": "emergency"})
-            send_text(sender, MENU_PROMPTS["5"])
-
-        elif text == "6":
-            upsert_user(sender, {"state": "checkin"})
-            send_text(sender, MENU_PROMPTS["6"])
-
-        else:
-            # Unknown input while in menu
-            send_text(sender, "Please reply with a number 1-6 to choose an option, or type *Hi* to see the menu again.")
-
+    # Global: medicine taken confirmation
+    if text_lower in ["done", "taken", "हो गया", "घेतली", "ले लिया"]:
+        send_text(sender, "✅ Great! Medicine logged. Stay healthy! 💪\n\n_Reply 0 for menu_")
         return
 
-    # ── Handle state-based responses ──────────────────────────────────────
+    # Menu selection
+    if state == "menu" or text in ["1","2","3","4","5","6","7"]:
+        handle_menu_selection(sender, text, user)
+        return
 
-    if current_state == "reminder":
-        handle_reminder_input(sender, text)
-
-    elif current_state == "health_question":
-        handle_health_question(sender, text)
-
-    elif current_state == "emergency":
-        handle_emergency_input(sender, text, user)
-
-    elif current_state == "checkin":
-        handle_checkin_input(sender, text)
-
-    elif current_state == "prescription":
-        # They typed language preference instead of sending image
-        upsert_user(sender, {"preferred_language": text})
-        send_text(sender, f"Got it! Language set to *{text}*. Now please send your prescription photo 📸")
-
+    # State-based routing
+    state_handlers = {
+        "reminder":       handle_reminder_input,
+        "health_question": handle_health_question,
+        "health_log":     handle_health_log_input,
+        "language":       handle_language_input,
+        "delete_reminder": handle_delete_reminder,
+    }
+    handler = state_handlers.get(state)
+    if handler:
+        handler(sender, text, user)
     else:
         send_main_menu(sender)
 
+def handle_menu_selection(sender: str, text: str, user: dict):
+    if text == "1":
+        upsert_user(sender, {"state": "reminder"})
+        send_text(sender,
+            "💊 *Set Medicine Reminder*\n\n"
+            "Tell me the medicine name and time.\n\n"
+            "Example: _Take Crocin at 9 PM daily_\n\n"
+            "_Reply 0 to go back_"
+        )
+    elif text == "2":
+        show_reminders(sender)
 
-# ─── State Handlers ────────────────────────────────────────────────────────────
+    elif text == "3":
+        upsert_user(sender, {"state": "prescription"})
+        lang = user.get("language", "English")
+        send_text(sender,
+            f"📋 *Read Prescription*\n\n"
+            f"Please send a *photo* of your prescription.\n"
+            f"I will explain it in *{lang}*.\n\n"
+            f"_(Language can be changed via option 7)_\n\n"
+            f"_Reply 0 to go back_"
+        )
+    elif text == "4":
+        upsert_user(sender, {"state": "health_question"})
+        send_text(sender,
+            "❓ *Ask a Health Question*\n\n"
+            "Type your question below.\n\n"
+            "Example: _What is Metformin used for?_\n"
+            "Example: _Can I take Crocin with Metformin?_\n\n"
+            "_Reply 0 to go back_"
+        )
+    elif text == "5":
+        upsert_user(sender, {"state": "health_log"})
+        send_text(sender,
+            "📊 *Log Health Reading*\n\n"
+            "Tell me your reading. Examples:\n\n"
+            "• _My BP is 130/85_\n"
+            "• _Blood sugar is 140_\n"
+            "• _Weight is 68 kg_\n\n"
+            "_Reply 0 to go back_"
+        )
+    elif text == "6":
+        show_health_history(sender)
 
-def handle_reminder_input(sender: str, text: str):
+    elif text == "7":
+        upsert_user(sender, {"state": "language"})
+        send_text(sender,
+            "🌐 *Change Language*\n\n"
+            "Which language do you prefer?\n\n"
+            "1 - English\n"
+            "2 - Hindi (हिंदी)\n"
+            "3 - Marathi (मराठी)\n"
+            "4 - Gujarati (ગુજરાતી)\n"
+            "5 - Tamil (தமிழ்)\n\n"
+            "_Reply with number_"
+        )
+    else:
+        send_text(sender, "Please reply with a number 1-7, or type *Hi* to see the menu.")
+
+# ─── Feature Handlers ──────────────────────────────────────────────────────────
+
+def handle_reminder_input(sender: str, text: str, user: dict):
     history = get_recent_history(sender)
     result = chat_with_asi(
-        f"User wants to set a medicine reminder: '{text}'. "
-        f"Extract medicine name, time (HH:MM 24hr), frequency. "
-        f"Output a <REMINDER> JSON tag and confirm in simple language.",
-        history
+        f"Set a medicine reminder: '{text}'. "
+        f"Extract medicine, time in HH:MM 24hr, frequency. "
+        f"Output <REMINDER> tag and confirm briefly.",
+        user, history
     )
     add_message_to_history(sender, "user", text)
     add_message_to_history(sender, "assistant", result["reply"])
 
     if result["reminder"]:
-        save_reminder(sender, result["reminder"])
-
-    send_text(sender, result["reply"])
-    send_text(sender, "\n_Reply 0 to go back to menu_")
-    upsert_user(sender, {"state": "reminder"})  # stay in reminder state for more
-
-
-def handle_health_question(sender: str, text: str):
-    history = get_recent_history(sender)
-    result = chat_with_asi(text, history)
-    add_message_to_history(sender, "user", text)
-    add_message_to_history(sender, "assistant", result["reply"])
-
-    if result["is_emergency"]:
-        trigger_emergency(sender, text, get_user(sender))
-        return
-
-    send_text(sender, result["reply"])
-    send_text(sender, "_Ask another question or reply 0 for menu_")
-
-
-def handle_emergency_input(sender: str, text: str, user: dict):
-    trigger_emergency(sender, text, user)
-
-
-def trigger_emergency(sender: str, symptom: str, user: dict):
-    name = user.get("name", "Senior User")
-    if CAREGIVER_PHONE:
-        send_emergency_alert(CAREGIVER_PHONE, name, sender, symptom)
-    send_text(sender,
-        "🚨 *EMERGENCY ALERT SENT*\n\n"
-        "Your caregiver has been notified immediately.\n"
-        "Please call *112* if this is life-threatening.\n\n"
-        "Stay calm. Help is on the way. 🙏"
-    )
-    upsert_user(sender, {"state": "menu"})
-
-
-def handle_checkin_input(sender: str, text: str):
-    log_health_checkin(sender, text)
-    result = chat_with_asi(
-        f"User daily health check-in response: '{text}'. "
-        f"Respond warmly and give simple advice if needed.",
-        []
-    )
-    send_text(sender, result["reply"])
-    send_text(sender, "_Reply 0 to go back to menu_")
-    upsert_user(sender, {"state": "menu"})
+        r = result["reminder"]
+        saved = save_reminder(
+            sender,
+            r.get("medicine", "Medicine"),
+            r.get("time", ""),
+            r.get("frequency", "daily")
+        )
+        if saved:
+            send_text(sender,
+                f"✅ *Reminder Set!*\n\n"
+                f"💊 Medicine: *{r.get('medicine')}*\n"
+                f"⏰ Time: *{r.get('time')}*\n"
+                f"🔁 Frequency: *{r.get('frequency', 'daily')}*\n\n"
+                f"_Reply 0 for menu or set another reminder_"
+            )
+        else:
+            send_text(sender,
+                f"⚠️ A reminder for *{r.get('medicine')}* at *{r.get('time')}* already exists!\n\n"
+                f"_Reply 0 for menu_"
+            )
+    else:
+        send_text(sender, result["reply"] + "\n\n_Reply 0 for menu_")
 
 
 def show_reminders(sender: str):
-    from firebase_handler import get_active_reminders
     reminders = get_active_reminders(sender)
     if reminders:
         msg = "📅 *Your Active Reminders:*\n\n"
-        for r in reminders:
-            msg += f"💊 {r.get('medicine')} at {r.get('time')} ({r.get('frequency', 'daily')})\n"
-        msg += "\n_Reply 0 to go back to menu_"
+        for i, r in enumerate(reminders, 1):
+            msg += f"{i}. 💊 *{r['medicine']}* at {r['time']} ({r['frequency']})\n"
+        msg += "\nTo delete, type: _delete [medicine name]_\n_Reply 0 for menu_"
     else:
         msg = "No reminders set yet.\n\nReply *1* to set a medicine reminder."
+    send_text(sender, msg)
+    upsert_user(sender, {"state": "delete_reminder"})
+
+
+def handle_delete_reminder(sender: str, text: str, user: dict):
+    if text.lower().startswith("delete "):
+        medicine = text[7:].strip()
+        delete_reminder(sender, medicine)
+        send_text(sender, f"🗑️ Reminder for *{medicine}* deleted.\n\n_Reply 0 for menu_")
+    else:
+        send_main_menu(sender)
+
+
+def handle_health_question(sender: str, text: str, user: dict):
+    history = get_recent_history(sender)
+    result = chat_with_asi(text, user, history)
+    add_message_to_history(sender, "user", text)
+    add_message_to_history(sender, "assistant", result["reply"])
+    send_text(sender, result["reply"] + "\n\n_Ask another or reply 0 for menu_")
+
+
+def handle_health_log_input(sender: str, text: str, user: dict):
+    result = chat_with_asi(
+        f"User logged a health reading: '{text}'. "
+        f"Extract type (BP/Sugar/Weight/Other) and value. "
+        f"Output <HEALTHLOG> tag and confirm briefly.",
+        user, []
+    )
+    if result["health_log"]:
+        hl = result["health_log"]
+        save_health_log(sender, hl.get("type", "Other"), hl.get("value", text))
+        send_text(sender,
+            f"📊 *Reading Saved!*\n\n"
+            f"Type: *{hl.get('type')}*\n"
+            f"Value: *{hl.get('value')}*\n\n"
+            f"_Log another or reply 0 for menu_"
+        )
+    else:
+        send_text(sender, result["reply"] + "\n\n_Reply 0 for menu_")
+
+
+def show_health_history(sender: str):
+    logs = get_health_logs(sender, limit=10)
+    if logs:
+        msg = "📈 *Recent Health Readings:*\n\n"
+        for log in logs:
+            date = log["timestamp"][:10]
+            msg += f"• {log['type']}: *{log['value']}* ({date})\n"
+        msg += "\n_Reply 0 for menu_"
+    else:
+        msg = "No health readings logged yet.\n\nReply *5* to log a reading."
     send_text(sender, msg)
     upsert_user(sender, {"state": "menu"})
 
 
+def handle_language_input(sender: str, text: str, user: dict):
+    lang_map = {
+        "1": "English", "2": "Hindi", "3": "Marathi",
+        "4": "Gujarati", "5": "Tamil"
+    }
+    lang = lang_map.get(text)
+    if lang:
+        upsert_user(sender, {"language": lang, "state": "menu"})
+        send_text(sender, f"✅ Language changed to *{lang}*!\n\n_Reply 0 for menu_")
+    else:
+        send_text(sender, "Please reply with a number 1-5 to choose your language.")
+
+
 def handle_image_message(sender: str, media_id: str):
     user = get_user(sender)
-    # Check if user is in prescription state
-    if user.get("state") != "prescription":
-        send_text(sender, "📋 I see you sent an image! To explain a prescription, reply *2* from the menu first.")
+    if not user or not user.get("onboarded"):
+        handle_onboarding_image(sender, media_id)
         return
 
-    send_text(sender, "📋 Processing your prescription... please wait ⏳")
-    lang = user.get("preferred_language", "Hindi")
+    state = user.get("state", "")
+    if state != "prescription":
+        send_text(sender,
+            "I see you sent an image!\n\n"
+            "To read a prescription, reply *3* from the menu.\n\n"
+            "_Reply 0 for menu_"
+        )
+        return
+
+    send_text(sender, "📋 Reading your prescription... ⏳")
+    lang = user.get("language", "English")
     media_url = get_media_url(media_id)
-    explanation = explain_prescription(media_url, language=lang)
-    send_text(sender, f"📋 *Prescription ({lang}):*\n\n{explanation}")
-    send_text(sender, "_Reply 0 to go back to menu_")
+
+    try:
+        explanation = explain_prescription(media_url, lang, user)
+        send_text(sender, f"📋 *Prescription ({lang}):*\n\n{explanation}\n\n_Reply 0 for menu_")
+    except Exception as e:
+        print(f"[Prescription Error] {e}")
+        send_text(sender, "Sorry, I couldn't read the prescription. Please try a clearer photo. 🙏")
+
     upsert_user(sender, {"state": "menu"})
 
 
 def handle_audio_message(sender: str, media_id: str):
+    user = get_user(sender)
     send_text(sender, "🎤 Processing voice message... ⏳")
     media_url = get_media_url(media_id)
     audio_bytes = download_media(media_url)
-
     try:
         import io
         from openai import OpenAI
@@ -276,11 +410,10 @@ def handle_audio_message(sender: str, media_id: str):
         send_text(sender, f"🎤 I heard: _{transcript.text}_\n")
         handle_text_message(sender, transcript.text)
     except Exception as e:
-        print(f"[Audio] Error: {e}")
-        send_text(sender, "Sorry, couldn't process voice. Please type your message. 🙏")
+        print(f"[Audio Error] {e}")
+        send_text(sender, "Sorry, couldn't process voice message. Please type instead. 🙏")
 
 
-# ─── Health Check ──────────────────────────────────────────────────────────────
 @app.route("/", methods=["GET"])
 def health():
     return jsonify({"status": "SeniorCare AI running ✅"}), 200

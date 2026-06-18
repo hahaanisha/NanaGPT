@@ -1,4 +1,3 @@
-# firebase_handler.py  — SQLite version, no Firebase needed
 import sqlite3
 import json
 from datetime import datetime
@@ -35,7 +34,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS health_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             phone TEXT,
-            response TEXT,
+            type TEXT,
+            value TEXT,
             timestamp TEXT
         );
     """)
@@ -52,14 +52,17 @@ def upsert_user(phone, data):
     existing = get_user(phone)
     existing.update(data)
     conn = get_conn()
-    conn.execute("INSERT OR REPLACE INTO users VALUES (?,?)", (phone, json.dumps(existing)))
+    conn.execute("INSERT OR REPLACE INTO users VALUES (?,?)",
+                 (phone, json.dumps(existing)))
     conn.commit()
     conn.close()
 
 def add_message_to_history(phone, role, content):
     conn = get_conn()
-    conn.execute("INSERT INTO history (phone,role,content,timestamp) VALUES (?,?,?,?)",
-                 (phone, role, content, datetime.utcnow().isoformat()))
+    conn.execute(
+        "INSERT INTO history (phone,role,content,timestamp) VALUES (?,?,?,?)",
+        (phone, role, content, datetime.utcnow().isoformat())
+    )
     conn.commit()
     conn.close()
 
@@ -72,14 +75,23 @@ def get_recent_history(phone, limit=6):
     conn.close()
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
-def save_reminder(phone, reminder):
+def save_reminder(phone, medicine, time_str, frequency="daily"):
     conn = get_conn()
-    conn.execute(
-        "INSERT INTO reminders (phone, medicine, time, frequency) VALUES (?,?,?,?)",
-        (phone, reminder.get("medicine",""), reminder.get("time",""), reminder.get("frequency","daily"))
-    )
-    conn.commit()
+    # Check for duplicate before saving
+    existing = conn.execute(
+        "SELECT id FROM reminders WHERE phone=? AND medicine=? AND time=? AND active=1",
+        (phone, medicine, time_str)
+    ).fetchone()
+    if not existing:
+        conn.execute(
+            "INSERT INTO reminders (phone, medicine, time, frequency) VALUES (?,?,?,?)",
+            (phone, medicine, time_str, frequency)
+        )
+        conn.commit()
+        conn.close()
+        return True  # saved
     conn.close()
+    return False  # duplicate, skipped
 
 def get_active_reminders(phone):
     conn = get_conn()
@@ -89,12 +101,35 @@ def get_active_reminders(phone):
     conn.close()
     return [dict(r) for r in rows]
 
-def log_health_checkin(phone, response):
+def delete_reminder(phone, medicine):
     conn = get_conn()
-    conn.execute("INSERT INTO health_logs (phone,response,timestamp) VALUES (?,?,?)",
-                 (phone, response, datetime.utcnow().isoformat()))
+    conn.execute(
+        "UPDATE reminders SET active=0 WHERE phone=? AND LOWER(medicine)=LOWER(?)",
+        (phone, medicine)
+    )
     conn.commit()
     conn.close()
 
-# Call this once at startup
-init_db()
+def save_health_log(phone, log_type, value):
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO health_logs (phone, type, value, timestamp) VALUES (?,?,?,?)",
+        (phone, log_type, value, datetime.utcnow().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+def get_health_logs(phone, log_type=None, limit=7):
+    conn = get_conn()
+    if log_type:
+        rows = conn.execute(
+            "SELECT * FROM health_logs WHERE phone=? AND type=? ORDER BY timestamp DESC LIMIT ?",
+            (phone, log_type, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM health_logs WHERE phone=? ORDER BY timestamp DESC LIMIT ?",
+            (phone, limit)
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
