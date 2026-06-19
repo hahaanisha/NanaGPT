@@ -1,26 +1,40 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from firebase_handler import get_conn
-from whatsapp import send_reminder
 from datetime import datetime
+import pytz
 
 scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
 
+
 def send_all_reminders():
-    current_time = datetime.now().strftime("%H:%M")
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM reminders WHERE active=1 AND time=?", (current_time,)
-    ).fetchall()
-    conn.close()
-    for row in rows:
-        send_reminder(
-            to=row["phone"],
-            medicine=row["medicine"],
-            time_str=current_time
-        )
+    # Import here to avoid circular imports
+    from firebase_handler import get_all_active_reminders
+    from whatsapp import send_reminder
+
+    IST = pytz.timezone("Asia/Kolkata")
+    current_time = datetime.now(IST).strftime("%H:%M")
+    print(f"[Scheduler] Checking reminders at {current_time} IST")
+
+    reminders = get_all_active_reminders()
+    print(f"[Scheduler] Found {len(reminders)} active reminders")
+
+    for r in reminders:
+        print(f"[Scheduler] Checking: {r['medicine']} at {r['time']} for {r['phone']}")
+        if r["time"] == current_time:
+            print(f"[Scheduler] Sending reminder to {r['phone']}")
+            send_reminder(
+                to=r["phone"],
+                medicine=r["medicine"],
+                time_str=current_time
+            )
+
 
 def start_scheduler():
-    scheduler.add_job(send_all_reminders, CronTrigger(minute="*"))
+    scheduler.add_job(
+        send_all_reminders,
+        CronTrigger(minute="*"),
+        id="reminder_job",
+        replace_existing=True
+    )
     scheduler.start()
     print("[Scheduler] Started ✅")
