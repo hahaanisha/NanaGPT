@@ -1,4 +1,8 @@
-# NanaGPT — WhatsApp Health Companion for Elderly Care
+<p align="center">
+  <img src="readme_img/hero.png" alt="ContextBridge Hero" width="1000" />
+</p>
+
+# NanaGPT: WhatsApp Health Companion for Elderly Care
 
 A WhatsApp-based AI health assistant for senior citizens, powered by ASI:ONE. No app to install. No new interface to learn. Just WhatsApp.
 
@@ -212,6 +216,13 @@ Pillow==10.4.0
 | `PHONE_NUMBER_ID` | WhatsApp phone number ID from Meta dashboard |
 | `WEBHOOK_VERIFY_TOKEN` | Any string you choose — must match Meta webhook config |
 | `CAREGIVER_PHONE` | Caregiver's number in E.164 format without `+` (e.g. `919876543210`) |
+
+---
+## Implementation Screenshots
+
+<p align="center">
+  <img src="readme_img/ss.png" alt="demo" width="700" />
+</p>
 
 ---
 
