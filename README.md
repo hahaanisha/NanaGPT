@@ -234,6 +234,13 @@ Pillow==10.4.0
 
 ---
 
-## License
+## Team
 
-MIT
+<p align="left">
+  <a href="mailto:teaminspire2226@gmail.com">
+    <img src="readme/team.png" alt="Contact Team INSPIRE" width="200"/>
+  </a>
+</p>
+
+- [Tejas Gadge](https://www.linkedin.com/in/tejas-gadge-8a395b258/)
+- [Anisha Shankar](https://www.linkedin.com/in/anisha-shankar-/)
