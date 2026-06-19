@@ -238,7 +238,7 @@ Pillow==10.4.0
 
 <p align="left">
   <a href="mailto:teaminspire2226@gmail.com">
-    <img src="readme/team.png" alt="Contact Team INSPIRE" width="200"/>
+    <img src="readme_img/team.png" alt="Contact Team INSPIRE" width="200"/>
   </a>
 </p>
 
