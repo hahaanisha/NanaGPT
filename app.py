@@ -381,6 +381,22 @@ def show_health_history(sender: str):
     if logs:
         msg = "📈 *Recent Health Readings:*\n\n"
         for log in logs:
+            ts = log["timestamp"]
+            # Handle both datetime object (PostgreSQL) and string (SQLite)
+            if hasattr(ts, "strftime"):
+                date = ts.strftime("%d %b %Y")
+            else:
+                date = str(ts)[:10]
+            msg += f"• {log['type']}: *{log['value']}* ({date})\n"
+        msg += "\n_Reply 0 for menu_"
+    else:
+        msg = "No health readings logged yet.\n\nReply *5* to log a reading."
+    send_text(sender, msg)
+    upsert_user(sender, {"state": "menu"})
+    logs = get_health_logs(sender, limit=10)
+    if logs:
+        msg = "📈 *Recent Health Readings:*\n\n"
+        for log in logs:
             date = log["timestamp"][:10]
             msg += f"• {log['type']}: *{log['value']}* ({date})\n"
         msg += "\n_Reply 0 for menu_"
