@@ -61,20 +61,20 @@ Flask App  (Render)
 
 ASI:ONE is the core intelligence layer. It is accessed via an OpenAI-compatible API, integrated using the standard Python `openai` SDK with a custom `base_url`.
 
-**Personalized responses** — Every API call includes a dynamically built system prompt with the user's name, known conditions, and current medicines. Responses are contextual, not generic.
+- **Personalized responses** — Every API call includes a dynamically built system prompt with the user's name, known conditions, and current medicines. Responses are contextual, not generic.
 
-**Multilingual output** — The system prompt instructs ASI:ONE to respond in the user's selected language and correct script (Devanagari for Hindi/Marathi, Gujarati script, Tamil script).
+- **Multilingual output** — The system prompt instructs ASI:ONE to respond in the user's selected language and correct script (Devanagari for Hindi/Marathi, Gujarati script, Tamil script).
 
-**Structured data extraction** — ASI:ONE embeds structured JSON inside custom tags in its response:
+- **Structured data extraction** — ASI:ONE embeds structured JSON inside custom tags in its response:
 ```
 <REMINDER>{"medicine":"Metformin","time":"08:00","frequency":"daily"}</REMINDER>
 <HEALTHLOG>{"type":"BP","value":"130/85"}</HEALTHLOG>
 ```
 These are parsed by the app and written to the database. The tags are stripped before the reply reaches the user.
 
-**Prescription image analysis** — Prescription photos are downloaded, converted to base64, and sent to ASI:ONE as vision input. The model returns a structured explanation in the user's language.
+- **Prescription image analysis** — Prescription photos are downloaded, converted to base64, and sent to ASI:ONE as vision input. The model returns a structured explanation in the user's language.
 
-**Conversation context** — The last three exchanges are retrieved from SQLite and included in every API call, maintaining session context across stateless webhook requests.
+- **Conversation context** — The last three exchanges are retrieved from SQLite and included in every API call, maintaining session context across stateless webhook requests.
 
 ---
 
