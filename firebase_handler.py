@@ -1,7 +1,7 @@
 import os
 import json
 import psycopg
-import psycopg.extras
+from psycopg.rows import dict_row
 from datetime import datetime
 from dotenv import load_dotenv
 
