@@ -7,7 +7,6 @@ scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
 
 
 def send_all_reminders():
-    # Import here to avoid circular imports
     from firebase_handler import get_all_active_reminders
     from whatsapp import send_reminder
 
@@ -15,18 +14,20 @@ def send_all_reminders():
     current_time = datetime.now(IST).strftime("%H:%M")
     print(f"[Scheduler] Checking reminders at {current_time} IST")
 
-    reminders = get_all_active_reminders()
-    print(f"[Scheduler] Found {len(reminders)} active reminders")
-
-    for r in reminders:
-        print(f"[Scheduler] Checking: {r['medicine']} at {r['time']} for {r['phone']}")
-        if r["time"] == current_time:
-            print(f"[Scheduler] Sending reminder to {r['phone']}")
-            send_reminder(
-                to=r["phone"],
-                medicine=r["medicine"],
-                time_str=current_time
-            )
+    try:
+        reminders = get_all_active_reminders()
+        print(f"[Scheduler] {len(reminders)} active reminder(s)")
+        for r in reminders:
+            print(f"[Scheduler] {r['medicine']} at {r['time']} for {r['phone']}")
+            if r["time"] == current_time:
+                print(f"[Scheduler] SENDING to {r['phone']}")
+                send_reminder(
+                    to=r["phone"],
+                    medicine=r["medicine"],
+                    time_str=current_time
+                )
+    except Exception as e:
+        print(f"[Scheduler] Error: {e}")
 
 
 def start_scheduler():

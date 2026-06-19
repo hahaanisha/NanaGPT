@@ -491,6 +491,8 @@ def health():
     return jsonify({"status": "SeniorCare AI running ✅"}), 200
 
 
+# Start scheduler at module level so gunicorn picks it up
+start_scheduler()
+
 if __name__ == "__main__":
-    start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=True)
