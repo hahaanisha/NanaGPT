@@ -163,7 +163,9 @@ def handle_text_message(sender: str, text: str):
 
     # Global: medicine taken confirmation
     if text_lower in ["done", "taken", "हो गया", "घेतली", "ले लिया"]:
-        send_text(sender, "✅ Great! Stay healthy! 💪\n\n_Reply 0 for menu_")
+        from reminder_scheduler import confirm_medicine_taken
+        confirm_medicine_taken(sender)
+        send_text(sender, "✅ Great! Medicine marked as taken. Stay healthy! 💪\n\n_Reply 0 for menu_")
         return
 
     # ── State-based routing — always takes priority ────────────────────────────
