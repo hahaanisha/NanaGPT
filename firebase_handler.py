@@ -1,7 +1,7 @@
 import os
 import json
-import psycopg2
-import psycopg2.extras
+import psycopg
+import psycopg.extras
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -11,7 +11,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def get_conn():
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg.connect(DATABASE_URL)
     return conn
 
 
@@ -60,7 +60,7 @@ def init_db():
 
 def get_user(phone):
     conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = conn.cursor(cursor_factory=psycopg.extras.RealDictCursor)
     cur.execute("SELECT data FROM users WHERE phone=%s", (phone,))
     row = cur.fetchone()
     cur.close()
@@ -97,7 +97,7 @@ def add_message_to_history(phone, role, content):
 
 def get_recent_history(phone, limit=6):
     conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = conn.cursor(cursor_factory=psycopg.extras.RealDictCursor)
     cur.execute("""
         SELECT role, content FROM history
         WHERE phone=%s
@@ -112,7 +112,7 @@ def get_recent_history(phone, limit=6):
 
 def save_reminder(phone, medicine, time_str, frequency="daily"):
     conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = conn.cursor(cursor_factory=psycopg.extras.RealDictCursor)
     cur.execute("""
         SELECT id FROM reminders
         WHERE phone=%s AND LOWER(medicine)=LOWER(%s) AND time=%s AND active=TRUE
@@ -134,7 +134,7 @@ def save_reminder(phone, medicine, time_str, frequency="daily"):
 
 def get_active_reminders(phone):
     conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = conn.cursor(cursor_factory=psycopg.extras.RealDictCursor)
     cur.execute(
         "SELECT * FROM reminders WHERE phone=%s AND active=TRUE", (phone,)
     )
@@ -146,7 +146,7 @@ def get_active_reminders(phone):
 
 def get_all_active_reminders():
     conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = conn.cursor(cursor_factory=psycopg.extras.RealDictCursor)
     cur.execute("SELECT * FROM reminders WHERE active=TRUE")
     rows = cur.fetchall()
     cur.close()
@@ -180,7 +180,7 @@ def save_health_log(phone, log_type, value):
 
 def get_health_logs(phone, limit=10):
     conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = conn.cursor(cursor_factory=psycopg.extras.RealDictCursor)
     cur.execute("""
         SELECT * FROM health_logs WHERE phone=%s
         ORDER BY timestamp DESC LIMIT %s
