@@ -6,6 +6,8 @@
 
 A WhatsApp-based AI health assistant for senior citizens, powered by ASI:ONE. No app to install. No new interface to learn. Just WhatsApp.
 
+🎥 **Demo Video:** [Link](https://www.youtube.com/watch?v=wdSpqIZsJ8U)
+
 ---
 
 ## Overview
