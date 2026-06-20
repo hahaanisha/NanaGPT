@@ -265,7 +265,12 @@ pytz==2024.1
 <p align="center">
   <img src="readme_img/ss.png" alt="demo" width="700" />
 </p>
-
+<p align="center">
+  <img src="readme_img/WABA.png" alt="demo" width="700" />
+</p>
+<p align="center">
+  <img src="readme_img/render.png" alt="demo" width="700" />
+</p>
 ---
 
 ## Issues Faced During Development
